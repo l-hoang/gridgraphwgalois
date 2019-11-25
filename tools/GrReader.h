@@ -447,15 +447,15 @@ private:
 
     if (id == (total - 1)) {
       if (nodesUpper != numNodes) {
-        printf("[%d] Readjusting last host to get all nodes\n", id);
+        //printf("[%lu] Readjusting last host to get all nodes\n", id);
         nodesUpper = numNodes;
       }
     }
 
     if (id == 0) {
-      printf("Total nodes %lu, Total edges %lu\n", numNodes, numEdges);
+      printf("Total nodes %u, Total edges %lu\n", numNodes, numEdges);
     }
-    printf("[%d] Lower is %lu, upper is %lu\n", id, nodesLower, nodesUpper);
+    //printf("[%lu] Lower is %lu, upper is %lu\n", id, nodesLower, nodesUpper);
     return std::make_pair(nodesLower, nodesUpper);
   }
 
@@ -508,6 +508,9 @@ public:
 
   //! @returns node offset of this buffered graph
   uint64_t getNodeOffset() const { return nodeOffset; }
+
+  //! @returns edge offset of this buffered graph
+  uint64_t getEdgeOffset() const { return edgeOffset; }
 
   /**
    * Loads given Galois CSR graph into memory.
@@ -877,6 +880,51 @@ public:
   void resetAndFree() {
     freeMemory();
     resetGraphStatus();
+  }
+
+////////////////////////////////////////////////////////////////////////////////
+// Iterator things
+////////////////////////////////////////////////////////////////////////////////
+
+  uint64_t iterCurNode;
+  uint64_t iterCurEdge;
+  uint64_t curNodeEnd;
+
+  /**
+   *
+   * @returns Edges to iterate over in this graph
+   */
+  uint64_t initEdgeIterator() {
+    iterCurNode = nodeOffset;
+    iterCurEdge = edgeOffset;
+    if (numLocalNodes > 0) {
+      curNodeEnd = edgeEnd(iterCurNode);
+    }
+    return numLocalEdges;
+  }
+
+  std::pair<uint64_t, uint64_t> nextEdge() {
+    // exausted node, go onto next one
+    while (iterCurEdge == curNodeEnd) {
+      // shouldn't be called actually
+      if (iterCurNode == (nodeOffset + numLocalNodes)) {
+        //fprintf(stderr, "called nextEdge when all edges are gone "
+        //                "%lu %lu %lu %lu %lu\n",
+        //                iterCurEdge, curNodeEnd,
+        //                iterCurNode, nodeOffset, numLocalNodes);
+        exit(-1);
+      }
+      iterCurNode++;
+      if (iterCurNode < (nodeOffset + numLocalNodes)) {
+        //printf("%lu %lu %lu\n", iterCurNode, nodeOffset, numLocalNodes);
+        curNodeEnd = edgeEnd(iterCurNode);
+      }
+    }
+    uint64_t src = iterCurNode;
+    uint64_t dst = edgeDestination(iterCurEdge);
+    iterCurEdge++;
+
+    return std::make_pair(src, dst);
   }
 };
 } // namespace graphs
