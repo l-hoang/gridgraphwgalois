@@ -27,6 +27,7 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 
 #include <thread>
 #include <vector>
+#include <functional>
 
 #include "core/constants.hpp"
 #include "core/type.hpp"
