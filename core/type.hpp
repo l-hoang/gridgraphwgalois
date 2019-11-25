@@ -17,9 +17,10 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 #ifndef TYPE_H
 #define TYPE_H
 
+// TODO change these types into something more reasonable.....
 typedef int VertexId;
 typedef long EdgeId;
-typedef float Weight;
+typedef uint32_t Weight;
 
 struct Edge {
   VertexId source;
