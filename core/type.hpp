@@ -22,9 +22,9 @@ typedef long EdgeId;
 typedef float Weight;
 
 struct Edge {
-	VertexId source;
-	VertexId target;
-	Weight weight;
+  VertexId source;
+  VertexId target;
+  Weight weight;
 };
 
 struct MergeStatus {
