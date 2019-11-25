@@ -35,6 +35,8 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 #include "core/time.hpp"
 #include "core/type.hpp"
 
+#include "GrReader.h"
+
 long PAGESIZE = 4096;
 
 void generate_edge_grid(std::string input, std::string output,
