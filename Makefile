@@ -8,7 +8,7 @@ HEADERS= $(shell find . -name '*.hpp')
 
 all: $(TARGETS)
 
-bin/preprocess: tools/preprocess.cpp $(HEADERS)
+bin/preprocess: tools/preprocess.cpp $(HEADERS) tools/GrReader.h
 	$(CXX) $(CXXFLAGS) -o $@ $< $(SYSLIBS)
 
 bin/bfs: examples/bfs.cpp $(HEADERS)
