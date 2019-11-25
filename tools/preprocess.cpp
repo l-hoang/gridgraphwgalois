@@ -26,6 +26,7 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 #include <string>
 #include <thread>
 #include <vector>
+#include <limits>
 
 #include "core/atomic.hpp"
 #include "core/constants.hpp"
@@ -55,6 +56,9 @@ void generate_edge_grid(std::string input, std::string output,
     edges = file_size(input) / edge_unit;
     break;
   case 1:
+    fprintf(stderr,
+            "danger, galois reader doesn't support weights at the moment\n");
+    exit(0);
     edge_unit = sizeof(VertexId) * 2 + sizeof(Weight);
     edges = file_size(input) / edge_unit;
     break;
@@ -174,40 +178,109 @@ void generate_edge_grid(std::string input, std::string output,
     });
   }
 
-  ////////////////////////////////////////////////////////////////////////////////
-  // TODO look here
-  ////////////////////////////////////////////////////////////////////////////////
+  // open file descriptor
+  int fin = -1;
 
-  // open file
-  int fin = open(input.c_str(), O_RDONLY);
-  if (fin == -1)
-    printf("%s\n", strerror(errno));
-  assert(fin != -1);
-
-  // signifies which location a thread should read (cursor is pushed as a task)
-  int cursor = 0;
-  long total_bytes = file_size(input);
+  // TODO inaccurate measure of things
+  //long total_bytes = file_size(input);
   // tracks progress (assuming all bytes are known)
-  long read_bytes = 0;
+  //long read_bytes = 0;
 
   // graph processing timer
   double start_time = get_time();
 
-  // file reading loop
-  while (true) {
-    long bytes = read(fin, buffers[cursor], IOSIZE);
-    // make sure read didn't fail
-    assert(bytes != -1);
-    // break if entire file is read
-    if (bytes == 0)
-      break;
+  // TODO currently will not read edge data
+  galois::graphs::GrReader<void> graphReader;
 
-    // mark buffer as occupied
-    occupied[cursor] = true;
+  // split graphs into this amount of chunks to read (to prevent
+  // loading entire graph at once into memory)
+  uint64_t GRAPH_CHUNKS = 128;
+  assert(GRAPH_CHUNKS > 0);
+  uint64_t curChunk = 0;
+  // read chunk by chunk
+  graphReader.loadGraphBalanceEdges(input, curChunk, GRAPH_CHUNKS);
+
+  uint64_t globalNodes = graphReader.size();
+  uint64_t globalEdges = graphReader.sizeEdges();
+  // first, determine if this graph being read fits within GridGraph type
+  // parameters
+  uint64_t maxVertexID = std::numeric_limits<VertexId>::max();
+  uint64_t maxEdgeID = std::numeric_limits<EdgeId>::max();
+  //printf("Max vertex ID is %lu\n", maxVertexID);
+  //printf("Max edge ID is %lu\n", maxEdgeID);
+  if ((globalNodes > maxVertexID) || (globalEdges > maxEdgeID)) {
+    fprintf(stderr, "Graph vertex/edge ID exceeds supported GG limit\n");
+    exit(-1);
+  }
+
+  // total edges read
+  uint64_t edgesRead = 0;
+
+  // nodes/edges in this chunk to read
+  uint64_t chunkEdgesRead = 0;
+  uint64_t edgesInChunk = graphReader.initEdgeIterator();
+
+  // determine how many edges to read per round via IOSIZE
+  uint64_t maxEdgesToRead = IOSIZE / edge_unit;
+  //printf("Reading %lu edges per chunk\n", maxEdgesToRead);
+
+  // signifies which location a thread should read (cursor is pushed as a task)
+  int cursor = 0;
+
+  // loop until all edges read
+  while (edgesRead < globalEdges) {
+    if (chunkEdgesRead == edgesInChunk) {
+      // load next chunk if this chunk has no edges left
+      curChunk++;
+      graphReader.resetAndFree();
+      graphReader.loadGraphBalanceEdges(input, curChunk, GRAPH_CHUNKS);
+      chunkEdgesRead = 0;
+      edgesInChunk = graphReader.initEdgeIterator();
+      continue;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // if code makes it this far, it means the current chunk I have loaded
+    // has edges to read
+    //////////////////////////////////////////////////////////////////////////
+
+    // determine how many edges to read in this iteration; min of what's
+    // left and IOSIZE
+    uint64_t edgesLeftInChunk = edgesInChunk - chunkEdgesRead;
+    uint64_t edgesToReadThisIteration = std::min(edgesLeftInChunk,
+                                                 maxEdgesToRead);
+
+    char* curBuffer = buffers[cursor];
+    uint64_t bytesWritten = 0;
+
+    // this loop will read the appropriate amount of edges
+    for (uint64_t i = 0; i < edgesToReadThisIteration; i++) {
+      uint64_t src;
+      uint64_t dst;
+      // read edge
+      std::tie(src, dst) = graphReader.nextEdge();
+      // "cast" to vertex id type
+      VertexId cSrc = src;
+      VertexId cDst = dst;
+      //fprintf(stderr, "%lu %d %lu %d\n", src, cSrc, dst, cDst);
+
+      // memcpy src and dst over to buffer
+      memcpy(curBuffer + bytesWritten, &cSrc, sizeof(cSrc));
+      memcpy(curBuffer + bytesWritten + sizeof(cSrc), &cDst, sizeof(cDst));
+      bytesWritten += sizeof(VertexId) * 2;
+
+      // below is to make sure it wrote to buffer correctly
+      //VertexId* test = (VertexId*)curBuffer;
+      //printf("%d %d\n", test[2 * i], test[2 * i + 1]);
+    }
+
+    chunkEdgesRead += edgesToReadThisIteration;
+    edgesRead += edgesToReadThisIteration;
+
     // start a thread on processing that read buffer
-    tasks.push(std::make_tuple(cursor, bytes));
-    read_bytes += bytes;
-    printf("progress: %.2f%%\r", 100. * read_bytes / total_bytes);
+    occupied[cursor] = true;
+    tasks.push(std::make_tuple(cursor, bytesWritten));
+    printf("progress: %.2f%%\r", 100. * edgesRead / globalEdges);
     fflush(stdout);
 
     // find an unoccupied buffer to read the next thing into
@@ -215,13 +288,8 @@ void generate_edge_grid(std::string input, std::string output,
       cursor = (cursor + 1) % (parallelism * 2);
     }
   }
-  close(fin);
 
-  ////////////////////////////////////////////////////////////////////////////////
-  // TODO end here
-  ////////////////////////////////////////////////////////////////////////////////
-
-  assert(read_bytes == edges * edge_unit);
+  assert(edgesRead == globalEdges);
 
   // pushing kill signals
   for (int ti = 0; ti < parallelism; ti++) {
@@ -263,7 +331,7 @@ void generate_edge_grid(std::string input, std::string output,
   // writing
   for (int j = 0; j < partitions; j++) {
     for (int i = 0; i < partitions; i++) {
-      printf("progress: %.2f%%\r", 100. * offset / total_bytes);
+      //printf("progress: %.2f%%\r", 100. * offset / total_bytes);
       fflush(stdout);
       write(fout_column_offset, &offset, sizeof(offset));
       char filename[4096];
@@ -294,7 +362,7 @@ void generate_edge_grid(std::string input, std::string output,
   offset = 0;
   for (int i = 0; i < partitions; i++) {
     for (int j = 0; j < partitions; j++) {
-      printf("progress: %.2f%%\r", 100. * offset / total_bytes);
+      //printf("progress: %.2f%%\r", 100. * offset / total_bytes);
       fflush(stdout);
       write(fout_row_offset, &offset, sizeof(offset));
       char filename[4096];
