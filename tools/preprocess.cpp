@@ -41,6 +41,11 @@ void generate_edge_grid(std::string input, std::string output,
                         VertexId vertices, int partitions, int edge_type) {
   int parallelism = std::thread::hardware_concurrency();
   int edge_unit;
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // TODO look here
+  ////////////////////////////////////////////////////////////////////////////////
+  // update edge unit AND edges
   EdgeId edges;
   switch (edge_type) {
   case 0:
@@ -56,6 +61,9 @@ void generate_edge_grid(std::string input, std::string output,
     exit(-1);
   }
   printf("vertices = %d, edges = %ld\n", vertices, edges);
+  ////////////////////////////////////////////////////////////////////////////////
+  // TODO end here
+  ////////////////////////////////////////////////////////////////////////////////
 
   char **buffers = new char *[parallelism * 2];
   bool *occupied = new bool[parallelism * 2];
@@ -164,35 +172,61 @@ void generate_edge_grid(std::string input, std::string output,
     });
   }
 
+  ////////////////////////////////////////////////////////////////////////////////
+  // TODO look here
+  ////////////////////////////////////////////////////////////////////////////////
+
+  // open file
   int fin = open(input.c_str(), O_RDONLY);
   if (fin == -1)
     printf("%s\n", strerror(errno));
   assert(fin != -1);
+
+  // signifies which location a thread should read (cursor is pushed as a task)
   int cursor = 0;
   long total_bytes = file_size(input);
+  // tracks progress (assuming all bytes are known)
   long read_bytes = 0;
+
+  // graph processing timer
   double start_time = get_time();
+
+  // file reading loop
   while (true) {
     long bytes = read(fin, buffers[cursor], IOSIZE);
+    // make sure read didn't fail
     assert(bytes != -1);
+    // break if entire file is read
     if (bytes == 0)
       break;
+
+    // mark buffer as occupied
     occupied[cursor] = true;
+    // start a thread on processing that read buffer
     tasks.push(std::make_tuple(cursor, bytes));
     read_bytes += bytes;
     printf("progress: %.2f%%\r", 100. * read_bytes / total_bytes);
     fflush(stdout);
+
+    // find an unoccupied buffer to read the next thing into
     while (occupied[cursor]) {
       cursor = (cursor + 1) % (parallelism * 2);
     }
   }
   close(fin);
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // TODO end here
+  ////////////////////////////////////////////////////////////////////////////////
+
   assert(read_bytes == edges * edge_unit);
 
+  // pushing kill signals
   for (int ti = 0; ti < parallelism; ti++) {
     tasks.push(std::make_tuple(-1, 0));
   }
 
+  // start tasks here I guess
   for (int ti = 0; ti < parallelism; ti++) {
     threads[ti].join();
   }
@@ -224,6 +258,7 @@ void generate_edge_grid(std::string input, std::string output,
   int fout_column_offset = open((output + "/column_offset").c_str(),
                                 O_WRONLY | O_APPEND | O_CREAT, 0644);
   offset = 0;
+  // writing
   for (int j = 0; j < partitions; j++) {
     for (int i = 0; i < partitions; i++) {
       printf("progress: %.2f%%\r", 100. * offset / total_bytes);
@@ -243,6 +278,7 @@ void generate_edge_grid(std::string input, std::string output,
       close(fin);
     }
   }
+
   write(fout_column_offset, &offset, sizeof(offset));
   close(fout_column_offset);
   close(fout_column);
@@ -251,6 +287,8 @@ void generate_edge_grid(std::string input, std::string output,
       open((output + "/row").c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
   int fout_row_offset = open((output + "/row_offset").c_str(),
                              O_WRONLY | O_APPEND | O_CREAT, 0644);
+
+  // writing
   offset = 0;
   for (int i = 0; i < partitions; i++) {
     for (int j = 0; j < partitions; j++) {
@@ -271,6 +309,7 @@ void generate_edge_grid(std::string input, std::string output,
       close(fin);
     }
   }
+
   write(fout_row_offset, &offset, sizeof(offset));
   close(fout_row_offset);
   close(fout_row);
