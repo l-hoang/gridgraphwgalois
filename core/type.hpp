@@ -20,7 +20,7 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 // TODO change these types into something more reasonable.....
 typedef int VertexId;
 typedef long EdgeId;
-typedef uint32_t Weight;
+typedef float Weight;
 
 struct Edge {
   VertexId source;

@@ -53,20 +53,16 @@ void generate_edge_grid(std::string input, std::string output,
   switch (edge_type) {
   case 0:
     edge_unit = sizeof(VertexId) * 2;
-    edges = file_size(input) / edge_unit;
     break;
   case 1:
-    fprintf(stderr,
-            "danger, galois reader doesn't support weights at the moment\n");
-    exit(0);
+    printf("FILLING EVERYTHING WITH DEFAULT WEIGHT OF 1\n");
     edge_unit = sizeof(VertexId) * 2 + sizeof(Weight);
-    edges = file_size(input) / edge_unit;
     break;
   default:
     fprintf(stderr, "edge type (%d) is not supported.\n", edge_type);
     exit(-1);
   }
-  printf("vertices = %d, edges = %ld\n", vertices, edges);
+  printf("vertices = %d\n", vertices);
   ////////////////////////////////////////////////////////////////////////////////
   // TODO end here
   ////////////////////////////////////////////////////////////////////////////////
@@ -202,6 +198,9 @@ void generate_edge_grid(std::string input, std::string output,
 
   uint64_t globalNodes = graphReader.size();
   uint64_t globalEdges = graphReader.sizeEdges();
+
+  edges = globalEdges;
+
   // first, determine if this graph being read fits within GridGraph type
   // parameters
   uint64_t maxVertexID = std::numeric_limits<VertexId>::max();
@@ -226,6 +225,7 @@ void generate_edge_grid(std::string input, std::string output,
 
   // signifies which location a thread should read (cursor is pushed as a task)
   int cursor = 0;
+  Weight dummyWeight = 1;
 
   // loop until all edges read
   while (edgesRead < globalEdges) {
@@ -268,6 +268,11 @@ void generate_edge_grid(std::string input, std::string output,
       memcpy(curBuffer + bytesWritten, &cSrc, sizeof(cSrc));
       memcpy(curBuffer + bytesWritten + sizeof(cSrc), &cDst, sizeof(cDst));
       bytesWritten += sizeof(VertexId) * 2;
+
+      if (edge_type) {
+        memcpy(curBuffer + bytesWritten, &dummyWeight, sizeof(Weight));
+        bytesWritten += sizeof(Weight);
+      }
 
       // below is to make sure it wrote to buffer correctly
       //VertexId* test = (VertexId*)curBuffer;
