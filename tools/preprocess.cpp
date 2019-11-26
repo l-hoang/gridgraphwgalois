@@ -190,7 +190,7 @@ void generate_edge_grid(std::string input, std::string output,
 
   // split graphs into this amount of chunks to read (to prevent
   // loading entire graph at once into memory)
-  uint64_t GRAPH_CHUNKS = 128;
+  uint64_t GRAPH_CHUNKS = 64;
   assert(GRAPH_CHUNKS > 0);
   uint64_t curChunk = 0;
   // read chunk by chunk
@@ -225,6 +225,7 @@ void generate_edge_grid(std::string input, std::string output,
 
   // signifies which location a thread should read (cursor is pushed as a task)
   int cursor = 0;
+  uint64_t totalBytes = 0;
   Weight dummyWeight = 1;
 
   // loop until all edges read
@@ -278,6 +279,8 @@ void generate_edge_grid(std::string input, std::string output,
       //VertexId* test = (VertexId*)curBuffer;
       //printf("%d %d\n", test[2 * i], test[2 * i + 1]);
     }
+
+    totalBytes += bytesWritten;
 
     chunkEdgesRead += edgesToReadThisIteration;
     edgesRead += edgesToReadThisIteration;
@@ -336,7 +339,7 @@ void generate_edge_grid(std::string input, std::string output,
   // writing
   for (int j = 0; j < partitions; j++) {
     for (int i = 0; i < partitions; i++) {
-      //printf("progress: %.2f%%\r", 100. * offset / total_bytes);
+      printf("progress: %.2f%%\r", 100. * offset / totalBytes);
       fflush(stdout);
       write(fout_column_offset, &offset, sizeof(offset));
       char filename[4096];
@@ -367,7 +370,7 @@ void generate_edge_grid(std::string input, std::string output,
   offset = 0;
   for (int i = 0; i < partitions; i++) {
     for (int j = 0; j < partitions; j++) {
-      //printf("progress: %.2f%%\r", 100. * offset / total_bytes);
+      printf("progress: %.2f%%\r", 100. * offset / totalBytes);
       fflush(stdout);
       write(fout_row_offset, &offset, sizeof(offset));
       char filename[4096];
